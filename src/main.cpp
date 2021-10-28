@@ -3,6 +3,7 @@
 #include <OneWire.h>
 #include <LiquidCrystal.h>
 #include <DS18B20.h>
+// #include <EasyButton.h>
 
 #include <WiFiManager.h>
 WiFiManager wifiManager;
@@ -20,16 +21,18 @@ WiFiManager wifiManager;
   #include <ESPAsyncTCP.h>
 #endif
 
-#define LCD_rs      D0 
-#define LCD_en      D5 
-#define LCD_d4      D1 
-#define LCD_d5      D2 
-#define LCD_d6      D3 
-#define LCD_d7      D4
-#define TEMP_SENSOR D7
-#define PELTIER      D8
-#define PELTIER_EN   D6
-#define INTERVAL    1000
+#define LCD_rs        D0
+#define LCD_d4        D1
+#define LCD_d5        D2
+#define LCD_d6        D3
+#define LCD_d7        D4
+#define LCD_en        D5
+#define PELTIER_EN    D6
+#define TEMP_SENSOR   D7
+#define PELTIER       D8
+#define RESET         A0
+#define INTERVAL      1000
+#define RESET_DURATION  1000
 
 // Default Threshold Temperature Value
 String inputMessage = "25.0";
@@ -59,6 +62,7 @@ void notFound(AsyncWebServerRequest *request) {
 }
 
 AsyncWebServer server(80);
+// EasyButton button(RESET);
 
 // Replaces placeholder with DS18B20 values
 String processor(const String& var){
@@ -92,11 +96,29 @@ float temperature;
 
 String header;
 
+
+
+// void onPressedForDuration() {
+//   wifiManager.resetSettings();
+//   lcd.setCursor(0,0);
+//   lcd.print("Setup Mode");
+//   delay(1000);
+//   lcd.setCursor(0,1);
+//   lcd.print("Release Button");
+//   ESP.restart();
+// }
+
 void setup() {
   Serial.begin(9600);
-  // Uncomment and run it once, if you want to erase all the stored information
-  //wifiManager.resetSettings();
-  
+  lcd.begin(16, 2);
+  // push button on booting time for reset
+  pinMode(RESET, INPUT);
+  digitalWrite(RESET, HIGH);
+
+  // if(digitalRead(RESET) == LOW) {
+
+  // }
+
   // set custom ip for portal
   //wifiManager.setAPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
@@ -104,17 +126,13 @@ void setup() {
   // if it does not connect it starts an access point with the specified name
   // here  "AutoConnectAP"
   // and goes into a blocking loop awaiting configuration
-  wifiManager.autoConnect("Configure Temperature Controller");
+  wifiManager.autoConnect("Peltier Controller");
   // or use this for auto generated name ESP + ChipID
   //wifiManager.autoConnect();
   
   // if you get here you have connected to the WiFi
 
-  // set up the LCD's number of columns and rows:
-  lcd.begin(16, 2);
   lcd.setCursor(0,0);
-
-  // Print a message to the LCD.
   lcd.print(WiFi.localIP());
   tempSensor.begin();
   tempSensor.setResolution(12);
@@ -123,6 +141,9 @@ void setup() {
   
   pinMode (PELTIER, OUTPUT);
   digitalWrite (PELTIER, LOW);
+  
+  pinMode (PELTIER_EN, OUTPUT);
+  digitalWrite (PELTIER_EN, LOW);
   
   // Send web page to client
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -151,6 +172,7 @@ void setup() {
   server.onNotFound(notFound);
   server.begin();
 
+  // button.onPressedFor(RESET_DURATION, onPressedForDuration);
 }
 
 
