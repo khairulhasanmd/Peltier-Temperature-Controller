@@ -20,6 +20,17 @@ WiFiManager wifiManager;
   #include <ESPAsyncTCP.h>
 #endif
 
+#define LCD_rs      D0 
+#define LCD_en      D5 
+#define LCD_d4      D1 
+#define LCD_d5      D2 
+#define LCD_d6      D3 
+#define LCD_d7      D4
+#define TEMP_SENSOR D7
+#define PELTIER      D8
+#define PELTIER_EN   D6
+#define INTERVAL    1000
+
 // Default Threshold Temperature Value
 String inputMessage = "25.0";
 String lastTemperature;
@@ -30,7 +41,7 @@ String inputMessage2 = "true";
 // HTML web page to handle 2 input fields (threshold_input, enable_arm_input)
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-  <title>Temperature Threshold Output Control</title>
+  <title>Temperature Threshold PELTIER Control</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   </head><body>
   <h2>DS18B20 Temperature</h2> 
@@ -70,51 +81,19 @@ bool triggerActive = false;
 const char* PARAM_INPUT_1 = "threshold_input";
 const char* PARAM_INPUT_2 = "enable_arm_input";
 
-// Interval between sensor readings. Learn more about ESP32 timers: https://RandomNerdTutorials.com/esp32-pir-motion-sensor-interrupts-timers/
-unsigned long previousMillis = 0;     
-const long interval = 5000;    
+unsigned long previousMillis = 0;
 
-// GPIO where the output is connected to
-const int output = D8;
-
-// // GPIO where the DS18B20 is connected to
-// const int oneWireBus = 4;     
-// // Setup a oneWire instance to communicate with any OneWire devices
-// OneWire oneWire(oneWireBus);
-// // Pass our oneWire reference to Dallas Temperature sensor 
-// DallasTemperature sensors(&oneWire);
-
-
-
-
-
-
-
-
-
-#define TEMP_SENSOR             D7
 OneWire oneWire(TEMP_SENSOR);
 DS18B20 tempSensor(&oneWire);
-// initialize the library by associating any needed LCD interface pin
-// with the arduino pin number it is connected to
-const int rs = D0, en = D5, d4 = D1, d5 = D2, d6 = D3, d7 = D4;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+LiquidCrystal lcd(LCD_rs, LCD_en, LCD_d4, LCD_d5, LCD_d6, LCD_d7);
 float temperature;
 // todo
 // need a reset button to erase eeprom
 
-// Variable to store the HTTP request
 String header;
-
-
-// Assign output variables to GPIO pins
-const int output5 = 5;
-const int output4 = 4;
 
 void setup() {
   Serial.begin(9600);
-
-  
   // Uncomment and run it once, if you want to erase all the stored information
   //wifiManager.resetSettings();
   
@@ -142,15 +121,8 @@ void setup() {
 
   Serial.println("Connected.");
   
-  // server.begin();
-
-
-
-  pinMode(output, OUTPUT);
-  digitalWrite(output, LOW);
-  
-  // Start the DS18B20 sensor
-  // sensors.begin();
+  pinMode (PELTIER, OUTPUT);
+  digitalWrite (PELTIER, LOW);
   
   // Send web page to client
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -182,59 +154,44 @@ void setup() {
 }
 
 
-
-
-
 void loop() {
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
+  if (currentMillis - previousMillis >= INTERVAL) {
     previousMillis = currentMillis;
-    // sensors.requestTemperatures();
-    // // Temperature in Celsius degrees 
-    // float temperature = sensors.getTempCByIndex(0);
-    // Serial.print(temperature);
-    // Serial.println(" *C");
+    tempSensor.requestTemperatures();
+    temperature = tempSensor.getTempC();
+    // set the cursor to column 0, line 1
+    // (note: line 1 is the second row, since counting begins with 0):
+    lcd.setCursor(0, 1);
+    // print the number of seconds since reset:
+    lcd.print(temperature);
+    lcd.print("/");
+    lcd.print(inputMessage.toFloat());
+    lcd.print(" ");
 
-  tempSensor.requestTemperatures();
-  // while (!tempSensor.isConversionComplete());  // wait until tempSensor is ready
-  temperature = tempSensor.getTempC();
-  // set the cursor to column 0, line 1
-  // (note: line 1 is the second row, since counting begins with 0):
-  lcd.setCursor(0, 1);
-  // print the number of seconds since reset:
-  lcd.print(temperature);
-  lcd.print("/");
-  lcd.print(inputMessage.toFloat());
-  lcd.print(" ");
+    if(triggerActive == true){
+      lcd.print("COOL");
+    }else{
+      lcd.print("HEAT");
+    }  
 
-  if(triggerActive == true){
-    lcd.print("COOL");
-  }else{
-    lcd.print("HEAT");
-  }  
-
-    // Temperature in Fahrenheit degrees
-    /*float temperature = sensors.getTempFByIndex(0);
-    Serial.print(temperature);
-    Serial.println(" *F");*/
-    
     lastTemperature = String(temperature);
     
-    // Check if temperature is above threshold and if it needs to trigger output
+    // Check if temperature is above threshold and if it needs to trigger PELTIER
     if(temperature > inputMessage.toFloat() && inputMessage2 == "true" && !triggerActive){
       String message = String("Temperature above threshold. Current temperature: ") + 
                             String(temperature) + String("C");
       Serial.println(message);
       triggerActive = true;
-      digitalWrite(output, HIGH);
+      digitalWrite(PELTIER, HIGH);
     }
-    // Check if temperature is below threshold and if it needs to trigger output
+    // Check if temperature is below threshold and if it needs to trigger PELTIER
     else if((temperature < inputMessage.toFloat()) && inputMessage2 == "true" && triggerActive) {
       String message = String("Temperature below threshold. Current temperature: ") + 
                             String(temperature) + String(" C");
       Serial.println(message);
       triggerActive = false;
-      digitalWrite(output, LOW);
+      digitalWrite(PELTIER, LOW);
     }
   }
 
