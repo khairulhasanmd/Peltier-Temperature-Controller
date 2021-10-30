@@ -34,28 +34,46 @@ WiFiManager wifiManager;
 #define INTERVAL      1000
 #define RESET_DURATION  1000
 
-// Default Threshold Temperature Value
+// Default Temperature Value
 String inputMessage = "25.0";
 String lastTemperature;
 String enableArmChecked = "checked";
 String inputMessage2 = "true";
 
 
-// HTML web page to handle 2 input fields (threshold_input, enable_arm_input)
+// HTML web page to handle 2 input fields (target_temperature_input, enable_arm_input)
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
-  <title>Temperature Threshold PELTIER Control</title>
+  <title>Darkfarm PELTIER Controller</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   </head><body>
-  <h2>DS18B20 Temperature</h2> 
-  <h3>%TEMPERATURE% &deg;C</h3>
-  <h2>ESP Arm Trigger</h2>
+  <h2>Current Temperature</h2> 
+  <h3 id='temp'>%TEMPERATURE% &deg;C</h3>
   <form action="/get">
-    Temperature Threshold <input type="number" step="0.1" name="threshold_input" value="%THRESHOLD%" required><br>
-    Arm Trigger <input type="checkbox" name="enable_arm_input" value="true" %ENABLE_ARM_INPUT%><br><br>
+    Target Temperature <input type="number" step="0.1" name="target_temperature_input" value="%TARGET_TEMPERATURE%" required><br>
+   <input type="hidden" name="enable_arm_input" value="true" %ENABLE_ARM_INPUT%><br><br>
     <input type="submit" value="Submit">
   </form>
-</body></html>)rawliteral";
+</body>
+<script>
+setInterval(function() {
+  // Call a function repetatively with 2 Second interval
+  getData();
+}, 1000); 
+
+function getData() {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("temp").innerHTML =
+      this.responseText + ' &deg;C';
+    }
+  };
+  xhttp.open("GET", "getUpdate", true);
+  xhttp.send();
+}
+</script>
+</html>)rawliteral";
 
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
@@ -70,7 +88,7 @@ String processor(const String& var){
   if(var == "TEMPERATURE"){
     return lastTemperature;
   }
-  else if(var == "THRESHOLD"){
+  else if(var == "TARGET_TEMPERATURE"){
     return inputMessage;
   }
   else if(var == "ENABLE_ARM_INPUT"){
@@ -82,10 +100,12 @@ String processor(const String& var){
 // Flag variable to keep track if triggers was activated or not
 bool triggerActive = false;
 
-const char* PARAM_INPUT_1 = "threshold_input";
+const char* PARAM_INPUT_1 = "target_temperature_input";
 const char* PARAM_INPUT_2 = "enable_arm_input";
 
 unsigned long previousMillis = 0;
+
+float value = 0.0f;
 
 OneWire oneWire(TEMP_SENSOR);
 DS18B20 tempSensor(&oneWire);
@@ -149,10 +169,15 @@ void setup() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html, processor);
   });
+  
+  // Send web page to client
+  server.on("/getUpdate", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(200, "text/html", lastTemperature);
+  });
 
-  // Receive an HTTP GET request at <ESP_IP>/get?threshold_input=<inputMessage>&enable_arm_input=<inputMessage2>
+  // Receive an HTTP GET request at <ESP_IP>/get?target_temperature_input=<inputMessage>&enable_arm_input=<inputMessage2>
   server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    // GET threshold_input value on <ESP_IP>/get?threshold_input=<inputMessage>
+    // GET target_temperature_input value on <ESP_IP>/get?target_temperature_input=<inputMessage>
     if (request->hasParam(PARAM_INPUT_1)) {
       inputMessage = request->getParam(PARAM_INPUT_1)->value();
       // GET enable_arm_input value on <ESP_IP>/get?enable_arm_input=<inputMessage2>
@@ -199,6 +224,12 @@ void loop() {
 
     lastTemperature = String(temperature);
     
+    if(abs(inputMessage.toFloat() - temperature) > 1){
+      digitalWrite(PELTIER_EN, HIGH);
+    }else{
+      digitalWrite(PELTIER_EN, LOW);
+    }
+
     // Check if temperature is above threshold and if it needs to trigger PELTIER
     if(temperature > inputMessage.toFloat() && inputMessage2 == "true" && !triggerActive){
       String message = String("Temperature above threshold. Current temperature: ") + 
